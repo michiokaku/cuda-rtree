@@ -5,11 +5,16 @@
 #include "dataStruct.h"
 
 #include <stdio.h>
+#include <iostream>
 #include <stdlib.h>
-#include <thrust/sort.h>
-#include <thrust/execution_policy.h>
-#include <thrust/device_ptr.h>
 #include <thrust/device_vector.h>
+#include <thrust/transform.h>
+#include <thrust/sequence.h>
+#include <thrust/copy.h>
+#include <thrust/fill.h>
+#include <thrust/replace.h>
+#include <thrust/functional.h>
+#include <iostream>
 #include "sort.cuh"
 #include  <direct.h>
 
@@ -163,7 +168,7 @@ void SortBox(box *b, fVertex *midpoint, int length)
 
 	CountZorder << <GetBlockCount(length), THREAD_PER_BLOCK >> > (zOrder, midpoint, length);
 
-	b = sort_cub(zOrder, b, length);
+	b = sort_thrust(zOrder, b, length);
 }
 
 __device__ box BigerBox(box a, box b)
@@ -191,7 +196,12 @@ __global__ void FirstMergeBoxKernel(node *n ,box *b,int offset,int parentLength,
 
 		//count the number of children
 		int childNum = CHILD_COUNT;
-		if (tid == parentLength - 1)childNum = length%CHILD_COUNT;
+		if (tid == parentLength - 1)
+		{
+			childNum = length%CHILD_COUNT;
+			if (childNum == 0)childNum = CHILD_COUNT;
+		}
+			
 
 		box cb;
 		for (int i = 1;i < childNum;i++)
@@ -204,6 +214,61 @@ __global__ void FirstMergeBoxKernel(node *n ,box *b,int offset,int parentLength,
 		//return node
 		rn.b = rb;
 		n[offset + tid] = rn;
+	}
+}
+
+__global__ void MergeBoxKernel(node *n, int parentOffset,int childOffset ,int parentLength, int length)
+{
+	int tid = blockIdx.x *blockDim.x + threadIdx.x;
+
+	if (tid < parentLength)
+	{
+		int childIndex = tid * CHILD_COUNT + childOffset;
+		box rb = n[childIndex].b;//the box of node
+		node rn;
+		rn.child[0] = childIndex;
+
+		//count the number of children
+		int childNum = CHILD_COUNT;
+		if (tid == parentLength - 1)
+		{
+			childNum = length%CHILD_COUNT;
+			if (childNum == 0)childNum = CHILD_COUNT;
+		}
+
+		box cb;
+		for (int i = 1;i < childNum;i++)
+		{
+			rn.child[i] = childIndex + i;
+			cb = n[childIndex + i].b;
+			rb = BigerBox(rb, cb);
+		}
+
+		rn.b = rb;
+		n[parentOffset + tid] = rn;
+	}
+}
+
+__global__ void initNode(node * n,int length)
+{
+	int tid = blockIdx.x *blockDim.x + threadIdx.x;
+
+	if (tid < length)
+	{
+		node rn;
+		rn.b.xMax = 0.0;
+		rn.b.xMin = 0.0;
+		rn.b.yMax = 0.0;
+		rn.b.yMin = 0.0;
+		rn.b.zMax = 0.0;
+		rn.b.zMin = 0.0;
+
+		for (int i = 0;i < CHILD_COUNT;i++)
+		{
+			rn.child[i] = -1;
+		}
+
+		n[tid] = rn;
 	}
 }
 
@@ -225,21 +290,24 @@ rtree mergeBox(box *b,int length)
 	while (len > 1);
 
 	cudaMalloc((void**)&r.n, r.nodeCount * sizeof(unsigned int));
+	initNode << <GetBlockCount(r.nodeCount), THREAD_PER_BLOCK >> > (r.n, r.nodeCount);
 
 	len = length;
 	len = (len + CHILD_COUNT - 1) / CHILD_COUNT;
 	int offset = r.nodeCount - len;
-	//FirstMergeBoxKernel << <GetBlockCount(len), THREAD_PER_BLOCK >> > (r.n, b, offset, len,length);
+	FirstMergeBoxKernel << <GetBlockCount(len), THREAD_PER_BLOCK >> > (r.n, b, offset, len,length);
 
-	for (int i = 0;i < r.layer;i++)
+	for (int i = 1;i < r.layer;i++)
 	{
-
+		len = (len + CHILD_COUNT - 1) / CHILD_COUNT;
+		offset = offset - len;
+		MergeBoxKernel << <GetBlockCount(len), THREAD_PER_BLOCK >> > (r.n,offset, offset+len, len, length);
 	}
 
 	return r;
 }
 
-void buildRtree()
+rtree buildRtree()
 {
 	//read obj
 	obj o = ReadObj("C:\\Users\\chenxiyu\\Documents\\Visual Studio 2015\\Projects\\rtree\\media\\dragon.obj");
@@ -265,7 +333,9 @@ void buildRtree()
 	//sort box by the zorder
 	SortBox(dev_box, dev_midpoint, o.faceCount);
 
-	//mergeBox(dev_box, o.faceCount);
+	rtree r = mergeBox(dev_box, o.faceCount);
 
-	//cudaFree(dev_midpoint);
+	cudaFree(dev_midpoint);
+
+	return r;
 }

@@ -1,3 +1,5 @@
 #pragma once
 
-void buildRtree();
+#include "dataStruct.h"
+
+rtree buildRtree();

@@ -222,6 +222,18 @@ __global__ void FirstMergeBoxKernel(node n ,box *b,int offset,int parentLength,i
 	}
 }
 
+__device__ childIndex initChildIndex()
+{
+	childIndex ci;
+	
+	for (int i = 0;i < CHILD_COUNT;i++)
+	{
+		ci.index[i] = -1;
+	}
+
+	return ci;
+}
+
 __global__ void MergeBoxKernel(node n, int parentOffset,int childOffset ,int parentLength, int length)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
@@ -230,7 +242,7 @@ __global__ void MergeBoxKernel(node n, int parentOffset,int childOffset ,int par
 	{
 		int cIndex = tid * CHILD_COUNT + childOffset;
 		box rb = n.b[cIndex];//the box of node
-		childIndex rci;
+		childIndex rci = initChildIndex();
 		rci.index[0] = cIndex;
 
 		//count the number of children
@@ -305,11 +317,13 @@ rtree mergeBox(box *b,int length)
 	int offset = r.nodeCount - len;
 	FirstMergeBoxKernel << <GetBlockCount(len), THREAD_PER_BLOCK >> > (r.n, b, offset, len,length);
 
+	int oldLen;
 	for (int i = 1;i < r.layer;i++)
 	{
+		oldLen = len;
 		len = (len + CHILD_COUNT - 1) / CHILD_COUNT;
 		offset = offset - len;
-		MergeBoxKernel << <GetBlockCount(len), THREAD_PER_BLOCK >> > (r.n,offset, offset+len, len, length);
+		MergeBoxKernel << <GetBlockCount(len), THREAD_PER_BLOCK >> > (r.n,offset, offset+len, len, oldLen);
 	}
 
 	return r;
@@ -340,8 +354,6 @@ rtree buildRtree()
 
 	//sort box by the zorder
 	SortBox(dev_box, dev_midpoint, o.faceCount);
-
-	//sort_thrust_xfirst(dev_midpoint, dev_box, o.faceCount);
 
 	rtree r = mergeBox(dev_box, o.faceCount);
 

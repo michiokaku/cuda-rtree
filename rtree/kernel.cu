@@ -6,104 +6,59 @@
 #include <stdlib.h>
 #include "readObj.h"
 #include "build_rtree.cuh"
+#include "dataStruct.h"
+#include "searchRtree.cuh"
 
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
-
-__global__ void addKernel(int *c, const int *a, const int *b)
+float random(float range,int seed)
 {
-	int i = threadIdx.x;
-	c[i] = a[i] + b[i];
+	int x = (13777 * seed + 3242) % 65536;
+
+	for (int i = 0;i < 10;i++)
+	{
+		x = (17777 * x) % 65536;
+	}
+
+	float f = ((float)x) / 65536.0f;
+	f = f*range;
+
+	if (f > range)f = range;
+	return f;
 }
 
-__device__ void dummy1()
+box* genBox(int length)
 {
+	box *b = (box*)malloc(length * sizeof(box));
+
+	for (int i = 0;i < length;i++)
+	{
+		box rb;
+		rb.xMax = random(1.0f, i);
+		rb.xMin = random(rb.xMax, i + length);
+
+		rb.yMax = random(1.0f, i+(length*2));
+		rb.yMin = random(rb.yMax, i + (length * 3));
+
+		rb.zMax = random(1.0f, i+ (length * 4));
+		rb.zMin = random(rb.zMax, i + (length * 5));
+
+		b[i] = rb;
+	}
+
+	return b;
 }
 
 int main()
 {
-	buildRtree();
-	system("pause");
+	rtree r = buildRtree();
+
+	int length = 10;
+	box * b = genBox(length);
+
+	searchRtree(b, length, r);
+
+	//system("pause");
+
+	//cudaDeviceReset();
 	return 0;
-
-
 }
 
-// Helper function for using CUDA to add vectors in parallel.
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size)
-{
-	int *dev_a = 0;
-	int *dev_b = 0;
-	int *dev_c = 0;
-	cudaError_t cudaStatus;
-
-	// Choose which GPU to run on, change this on a multi-GPU system.
-	cudaStatus = cudaSetDevice(0);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-		goto Error;
-	}
-
-	// Allocate GPU buffers for three vectors (two input, one output)    .
-	cudaStatus = cudaMalloc((void**)&dev_c, size * sizeof(int));
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMalloc failed!");
-		goto Error;
-	}
-
-	cudaStatus = cudaMalloc((void**)&dev_a, size * sizeof(int));
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMalloc failed!");
-		goto Error;
-	}
-
-	cudaStatus = cudaMalloc((void**)&dev_b, size * sizeof(int));
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMalloc failed!");
-		goto Error;
-	}
-
-	// Copy input vectors from host memory to GPU buffers.
-	cudaStatus = cudaMemcpy(dev_a, a, size * sizeof(int), cudaMemcpyHostToDevice);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMemcpy failed!");
-		goto Error;
-	}
-
-	cudaStatus = cudaMemcpy(dev_b, b, size * sizeof(int), cudaMemcpyHostToDevice);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMemcpy failed!");
-		goto Error;
-	}
-
-	// Launch a kernel on the GPU with one thread for each element.
-	addKernel << <3, size >> >(dev_c, dev_a, dev_b);
-
-	// Check for any errors launching the kernel
-	cudaStatus = cudaGetLastError();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-		goto Error;
-	}
-
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-		goto Error;
-	}
-
-	// Copy output vector from GPU buffer to host memory.
-	cudaStatus = cudaMemcpy(c, dev_c, size * sizeof(int), cudaMemcpyDeviceToHost);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMemcpy failed!");
-		goto Error;
-	}
-
-Error:
-	cudaFree(dev_c);
-	cudaFree(dev_a);
-	cudaFree(dev_b);
-
-	return cudaStatus;
-}

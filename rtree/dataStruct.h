@@ -70,3 +70,5 @@ struct childNode
 };
 
 void debugBox(int length, box *b, int start, int end);
+
+void printBox(box b);

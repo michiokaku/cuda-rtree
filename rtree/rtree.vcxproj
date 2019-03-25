@@ -79,15 +79,18 @@
   <ItemGroup>
     <CudaCompile Include="build_rtree.cu" />
     <CudaCompile Include="kernel.cu" />
+    <CudaCompile Include="searchRtree.cu" />
     <CudaCompile Include="sort.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="build_rtree.cuh" />
     <ClInclude Include="dataStruct.h" />
     <ClInclude Include="readObj.h" />
+    <ClInclude Include="searchRtree.cuh" />
     <ClInclude Include="sort.cuh" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="dataStruct.cpp" />
     <ClCompile Include="readObj.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -1,10 +1,21 @@
 #pragma once
 
 #define CHILD_COUNT 8
+#define INTERSECT_FLAG unsigned char  //do not set CHILD_COUNT biger then the bit of the INTERSECT_FLAG
+
+#include<iostream>
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
 
 struct fVertex
 {
 	float x, y, z;
+
+	__host__ __device__
+		bool operator<(const fVertex a) const
+	{
+		return x < a.x;
+	}
 };
 
 struct face
@@ -34,15 +45,28 @@ struct box
 	float zMin;
 };
 
+struct childIndex
+{
+	int index[CHILD_COUNT];
+};
+
 struct node
 {
-	box b;
-	int child[CHILD_COUNT];
+	box *b;
+	childIndex *child;
 };
 
 struct rtree
 {
 	int layer;
 	int nodeCount;
-	node *n;
+	node n;
 };
+
+struct childNode
+{
+	int nodeIndex;
+	int boxIndex;
+};
+
+void debugBox(int length, box *b, int start, int end);

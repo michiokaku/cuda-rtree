@@ -26,3 +26,14 @@ box * sort_thrust(unsigned int * key, box * value,int length)
 
 	return value;
 }
+
+box * sort_thrust_xfirst(fVertex *midPoint, box * value, int length)
+{
+	thrust::device_ptr<fVertex> key_ptr(midPoint);
+	thrust::device_ptr<box>value_ptr(value);
+	thrust::sort_by_key<thrust::device_ptr<fVertex>, thrust::device_ptr<box>>(key_ptr, key_ptr + length, value_ptr);
+
+	thrust::device_free(key_ptr);
+
+	return value;
+}

@@ -44,6 +44,9 @@ obj ReadObj(char * fileName)
 		else if (str[0] == 'f')
 		{
 			sscanf(str, "f %d %d %d", &o.faceArray[faceNum].v[0], &o.faceArray[faceNum].v[1], &o.faceArray[faceNum].v[2]);
+			o.faceArray[faceNum].v[0]--;
+			o.faceArray[faceNum].v[1]--;
+			o.faceArray[faceNum].v[2]--;
 			faceNum++;
 		}
 	}

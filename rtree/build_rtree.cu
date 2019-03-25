@@ -8,6 +8,7 @@
 #include <iostream>
 #include <stdlib.h>
 #include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
 #include <thrust/transform.h>
 #include <thrust/sequence.h>
 #include <thrust/copy.h>
@@ -20,7 +21,7 @@
 
 #define GETVERTEX(o,f,j) o.vertexArray[f.v[j]];
 #define THREAD_PER_BLOCK 256
-#define SCALE 0.1 //scale the object;
+#define SCALE 0.05 //scale the object;
 
 int GetBlockCount(int threadCount) {
 
@@ -44,6 +45,9 @@ __global__ void scaleObj(fVertex *fv,int length)
 		f.x *= SCALE;
 		f.y *= SCALE;
 		f.z *= SCALE;
+
+		f.x += 0.5;
+		f.z += 0.5;
 
 		fv[tid] = f;
 	}
@@ -97,7 +101,6 @@ __global__ void buildBoxKernel(box *b, obj o, fVertex *midpoint)
 
 		regBox.zMax = zMax;
 		regBox.zMin = zMin;
-
 
 		//return regBox
 		b[tid] = regBox;
@@ -174,25 +177,27 @@ void SortBox(box *b, fVertex *midpoint, int length)
 __device__ box BigerBox(box a, box b)
 {
 	a.xMax = fmaxf(a.xMax, b.xMax);
-	a.xMin = fmaxf(a.xMin, b.xMin);
+	a.xMin = fminf(a.xMin, b.xMin);
 
 	a.yMax = fmaxf(a.yMax, b.yMax);
-	a.yMin = fmaxf(a.yMin, b.yMin);
+	a.yMin = fminf(a.yMin, b.yMin);
 
 	a.zMax = fmaxf(a.zMax, b.zMax);
-	a.zMin = fmaxf(a.zMin, b.zMin);
+	a.zMin = fminf(a.zMin, b.zMin);
+
+	return a;
 }
 
-__global__ void FirstMergeBoxKernel(node *n ,box *b,int offset,int parentLength,int length)
+__global__ void FirstMergeBoxKernel(node n ,box *b,int offset,int parentLength,int length)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
 
 	if (tid < parentLength)
 	{
-		int childIndex = tid * CHILD_COUNT;
-		box rb = b[childIndex];//the box of node
-		node rn;
-		rn.child[0] = childIndex;
+		int cIndex = tid * CHILD_COUNT;
+		box rb = b[cIndex];//the box of node
+		childIndex rci;
+		rci.index[0] = cIndex;
 
 		//count the number of children
 		int childNum = CHILD_COUNT;
@@ -206,27 +211,27 @@ __global__ void FirstMergeBoxKernel(node *n ,box *b,int offset,int parentLength,
 		box cb;
 		for (int i = 1;i < childNum;i++)
 		{
-			rn.child[i] = childIndex + i;
-			cb = b[childIndex + i];
+			rci.index[i] = cIndex + i;
+			cb = b[cIndex + i];
 			rb = BigerBox(rb, cb);
 		}
 
 		//return node
-		rn.b = rb;
-		n[offset + tid] = rn;
+		n.b[offset + tid] = rb;
+		n.child[offset + tid] = rci;
 	}
 }
 
-__global__ void MergeBoxKernel(node *n, int parentOffset,int childOffset ,int parentLength, int length)
+__global__ void MergeBoxKernel(node n, int parentOffset,int childOffset ,int parentLength, int length)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
 
 	if (tid < parentLength)
 	{
-		int childIndex = tid * CHILD_COUNT + childOffset;
-		box rb = n[childIndex].b;//the box of node
-		node rn;
-		rn.child[0] = childIndex;
+		int cIndex = tid * CHILD_COUNT + childOffset;
+		box rb = n.b[cIndex];//the box of node
+		childIndex rci;
+		rci.index[0] = cIndex;
 
 		//count the number of children
 		int childNum = CHILD_COUNT;
@@ -239,36 +244,38 @@ __global__ void MergeBoxKernel(node *n, int parentOffset,int childOffset ,int pa
 		box cb;
 		for (int i = 1;i < childNum;i++)
 		{
-			rn.child[i] = childIndex + i;
-			cb = n[childIndex + i].b;
+			rci.index[i] = cIndex + i;
+			cb = n.b[cIndex+i];
 			rb = BigerBox(rb, cb);
 		}
 
-		rn.b = rb;
-		n[parentOffset + tid] = rn;
+		n.b[parentOffset + tid] = rb;
+		n.child[parentOffset + tid] = rci;
 	}
 }
 
-__global__ void initNode(node * n,int length)
+__global__ void initNode(node n,int length)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
 
 	if (tid < length)
 	{
-		node rn;
-		rn.b.xMax = 0.0;
-		rn.b.xMin = 0.0;
-		rn.b.yMax = 0.0;
-		rn.b.yMin = 0.0;
-		rn.b.zMax = 0.0;
-		rn.b.zMin = 0.0;
+		box rb;
+		rb.xMax = 0.0;
+		rb.xMin = 0.0;
+		rb.yMax = 0.0;
+		rb.yMin = 0.0;
+		rb.zMax = 0.0;
+		rb.zMin = 0.0;
 
+		childIndex ci;
 		for (int i = 0;i < CHILD_COUNT;i++)
 		{
-			rn.child[i] = -1;
+			ci.index[i] = -1;
 		}
 
-		n[tid] = rn;
+		n.b[tid] = rb;
+		n.child[tid] = ci;
 	}
 }
 
@@ -289,7 +296,8 @@ rtree mergeBox(box *b,int length)
 	} 
 	while (len > 1);
 
-	cudaMalloc((void**)&r.n, r.nodeCount * sizeof(unsigned int));
+	cudaMalloc((void**)&r.n.b, r.nodeCount * sizeof(box));
+	cudaMalloc((void**)&r.n.child, r.nodeCount * sizeof(childIndex));
 	initNode << <GetBlockCount(r.nodeCount), THREAD_PER_BLOCK >> > (r.n, r.nodeCount);
 
 	len = length;
@@ -321,7 +329,7 @@ rtree buildRtree()
 
 	//copy the data of obj witch from host to device
 	cudaMemcpy(dev_o.vertexArray, o.vertexArray, dev_o.vertexCount * sizeof(fVertex), cudaMemcpyHostToDevice);
-	cudaMemcpy(dev_o.faceArray, o.faceArray, dev_o.vertexCount * sizeof(face), cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_o.faceArray, o.faceArray, dev_o.faceCount * sizeof(face), cudaMemcpyHostToDevice);
 
 	//build box for each face
 	fVertex *dev_midpoint;      //build the midpoint of each box
@@ -332,6 +340,8 @@ rtree buildRtree()
 
 	//sort box by the zorder
 	SortBox(dev_box, dev_midpoint, o.faceCount);
+
+	//sort_thrust_xfirst(dev_midpoint, dev_box, o.faceCount);
 
 	rtree r = mergeBox(dev_box, o.faceCount);
 

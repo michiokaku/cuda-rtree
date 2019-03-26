@@ -41,6 +41,13 @@ box* genBox(int length)
 		rb.zMax = random(1.0f, i+ (length * 4));
 		rb.zMin = random(rb.zMax, i + (length * 5));
 
+		//rb.xMax = 1.0f;
+		//rb.xMin = 0.0f;
+		//rb.yMax = 1.0f;
+		//rb.yMin = 0.0f;
+		//rb.zMax = 1.0f;
+		//rb.zMin = 0.0f;
+
 		b[i] = rb;
 	}
 
@@ -49,10 +56,10 @@ box* genBox(int length)
 
 int main()
 {
-	rtree r = buildRtree();
-
-	int length = 10;
+	int length = 1000;
 	box * b = genBox(length);
+
+	rtree r = buildRtree();
 
 	searchRtree(b, length, r);
 

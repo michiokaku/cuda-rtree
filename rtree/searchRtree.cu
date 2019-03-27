@@ -9,6 +9,11 @@
 
 #define intersectTest(a,b) (!((a.xMin > b.xMax) || (b.xMin > a.xMax) || (a.yMin > b.yMax) || (b.yMin > a.yMax) || (a.zMin > b.zMax) || (b.zMin > a.zMax)))
 
+__device__ void pBox(box b)
+{
+	printf("xMax:%f ; xMin:%f ; yMax:%f ; yMin:%f ; zMax:%f ; zMin:%f ;\n", b.xMax, b.xMin, b.yMax, b.yMin, b.zMax, b.zMin);
+}
+
 __global__ void FirstSearchRtreeKernel(box *searchBox, node n,INTERSECT_FLAG *inFlag,int *intersectChildCount,int length)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
@@ -241,6 +246,7 @@ void searchRtree(box *searchBox,int boxCount,rtree r)
 	cudaFree(intersectChildCount);
 	cudaFree(inFlag);
 
+	std::cout << childLength << "\n";
 
 	//
 	for (int i = 1;i < r.layer;i++)

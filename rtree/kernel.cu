@@ -25,21 +25,35 @@ float random(float range,int seed)
 	return f;
 }
 
+void seedAdd(int &seed)
+{
+	seed++;
+	seed %= 65535;
+}
+
 box* genBox(int length)
 {
 	box *b = (box*)malloc(length * sizeof(box));
 
+	int seed = 0;
+
 	for (int i = 0;i < length;i++)
 	{
 		box rb;
-		rb.xMax = random(1.0f, i);
-		rb.xMin = random(rb.xMax, i + length);
+		rb.xMax = random(1.0f, seed);
+		seedAdd(seed);
+		rb.xMin = random(rb.xMax, seed);
+		seedAdd(seed);
 
-		rb.yMax = random(1.0f, i+(length*2));
-		rb.yMin = random(rb.yMax, i + (length * 3));
+		rb.yMax = random(1.0f, seed);
+		seedAdd(seed);
+		rb.yMin = random(rb.yMax, seed);
+		seedAdd(seed);
 
-		rb.zMax = random(1.0f, i+ (length * 4));
-		rb.zMin = random(rb.zMax, i + (length * 5));
+		rb.zMax = random(1.0f, seed);
+		seedAdd(seed);
+		rb.zMin = random(rb.zMax, seed);
+		seedAdd(seed);
 
 		//rb.xMax = 1.0f;
 		//rb.xMin = 0.0f;
@@ -56,7 +70,7 @@ box* genBox(int length)
 
 int main()
 {
-	int length = 1000;
+	int length = 10000;
 	box * b = genBox(length);
 
 	rtree r = buildRtree();

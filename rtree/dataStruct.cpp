@@ -1,6 +1,6 @@
 #include "dataStruct.h"
 
-void printBox(box b)
+__host__ __device__ void printBox(box b)
 {
 	std::cout <<"xMax:" <<b.xMax << "; yMax:" << b.yMax << "; zMax:" << b.zMax << "; xMin:" << b.xMin << "; yMin:" << b.yMin << "; zMin:" << b.zMin << "\n";
 }

@@ -3,6 +3,11 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
+#include <device_launch_parameters.h>
+#include <cuda_device_runtime_api.h>
+#include <device_functions.h>
+#include <cuda.h>
+
 #include <iostream>
 #include <thrust/scan.h>
 #include <thrust/device_vector.h>
@@ -76,32 +81,62 @@ __global__ void SearchRtreeKernel(box *searchBox, int *boxId, node n, int *nodeL
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
 
+	__shared__ INTERSECT_FLAG flagShared[THREAD_PER_BLOCK];
+	__shared__ int iccShared[THREAD_PER_BLOCK];
+
+	flagShared[threadIdx.x] = 0;
+	iccShared[threadIdx.x] = 0;
+
 	if (tid < length)
 	{
-		box sb = searchBox[boxId[tid]];
-		childIndex ci = n.child[nodeList[tid]];
+		int parentId, childId;
+		parentId = tid / CHILD_COUNT;
+		childId = tid % CHILD_COUNT;
+
+		box sb = searchBox[boxId[parentId]];
 		box cb;
-		int index;
+		int index = n.child[parentId].index[childId];
 
 		INTERSECT_FLAG flag = 0;
 		int icc = 0;
 
-		for (int i = 0;i < CHILD_COUNT;i++)
-		{
-			index = ci.index[i];
-			if (index > 0) {
+		if (index > 0) {
 
-				cb = n.b[index];
-				if (intersectTest(sb, cb))
-				{
-					flag |= 1 << i;
-					icc++;
-				}
+			cb = n.b[index];
+			if (intersectTest(sb, cb))
+			{
+				flag = 1 << childId;
+				icc++;
 			}
 		}
 
-		intersectChildCount[tid] = icc;
-		inFlag[tid] = flag;
+		flagShared[threadIdx.x] = flag;
+		iccShared[threadIdx.x] = icc;
+
+		__syncthreads();
+
+		if (childId < 4)
+		{
+			flagShared[threadIdx.x] |= flagShared[threadIdx.x + 4];
+			iccShared[threadIdx.x] += iccShared[threadIdx.x + 4];
+		}
+
+		__syncthreads();
+		if (childId < 2)
+		{
+			flagShared[threadIdx.x] |= flagShared[threadIdx.x + 2];
+			iccShared[threadIdx.x] += iccShared[threadIdx.x + 2];
+		}
+
+		__syncthreads();
+		if (childId < 1)
+		{
+			inFlag[parentId] = flagShared[threadIdx.x] | flagShared[threadIdx.x + 1];
+			intersectChildCount[parentId] = iccShared[threadIdx.x] + iccShared[threadIdx.x + 1];
+
+			//printf("parentid = %d , childId = %d , icc = %d \n", parentId,childId, intersectChildCount[parentId]);
+		}
+
 	}
 }
 
@@ -190,7 +225,7 @@ int searchLayer(int nodeLength,int * &nodeList,box *searchBox,int * &boxId,node 
 
 	cudaMalloc((void**)&inFlag, nodeLength * sizeof(INTERSECT_FLAG));
 	cudaMalloc((void**)&intersectChildCount, nodeLength * sizeof(int));
-	SearchRtreeKernel << <GetBlockCount(nodeLength), THREAD_PER_BLOCK >> >(searchBox, boxId, n, nodeList, inFlag, intersectChildCount, nodeLength);
+	SearchRtreeKernel << <GetBlockCount(nodeLength*CHILD_COUNT), THREAD_PER_BLOCK >> >(searchBox, boxId, n, nodeList, inFlag, intersectChildCount, nodeLength);
 	//boxidDebug(nodeList, nodeLength);
 	//iccDebug(intersectChildCount, nodeLength);
 
@@ -249,7 +284,7 @@ void searchRtree(box *searchBox,int boxCount,rtree r)
 	std::cout << childLength << "\n";
 
 	//
-	for (int i = 1;i < r.layer;i++)
+	for (int i = 1;i < r.layer-3;i++)
 	{
 		if (childLength < 1)break;
 		childLength = searchLayer(childLength, childList, dev_searchBox, boxId, r.n);

@@ -70,7 +70,7 @@ box* genBox(int length)
 
 int main()
 {
-	int length = 10000;
+	int length = 1000;
 	box * b = genBox(length);
 
 	rtree r = buildRtree();

@@ -294,6 +294,7 @@ __global__ void initNode(node n,int length)
 rtree mergeBox(box *b,int length)
 {
 	rtree r;
+	r.leaf = b;
 
 	r.nodeCount = 0;
 	r.layer = 0;

@@ -61,6 +61,7 @@ struct rtree
 	int layer;
 	int nodeCount;
 	node n;
+	box * leaf;
 };
 
 struct childNode
@@ -69,6 +70,18 @@ struct childNode
 	int boxIndex;
 };
 
+struct searchResult
+{
+	int * leafList;
+	int * boxId;
+	int length;
+};
+
+
 void debugBox(int length, box *b, int start, int end);
 
 void printBox(box b);
+
+void spendTime();
+
+void cudaEventInit();

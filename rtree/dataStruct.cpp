@@ -16,3 +16,29 @@ void debugBox(int length, box *b, int start, int end)
 	}
 	free(bhost);
 }
+
+float time_elapsed = 0;
+cudaEvent_t start, stop;
+bool eventInit = false;
+
+void cudaEventInit()
+{
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	cudaEventRecord(start, 0);
+}
+
+void spendTime()
+{
+
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(start);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time_elapsed, start, stop);
+	std::cout << "spend time = " << time_elapsed << "ms \n";
+
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+}

@@ -131,6 +131,65 @@ __global__ void BuildChildList(int *perfixSum, INTERSECT_FLAG *inFlag,int *nodeL
 	}
 }
 
+__global__ void LastSearchRtreeKernel(box *searchBox, int *boxId, rtree r, int *nodeList, INTERSECT_FLAG *inFlag, int *intersectChildCount, int length)
+{
+	int tid = blockIdx.x *blockDim.x + threadIdx.x;
+
+	if (tid < length)
+	{
+		box sb = searchBox[boxId[tid]];
+		childIndex ci = r.n.child[nodeList[tid]];
+		box cb;
+		int index;
+
+		INTERSECT_FLAG flag = 0;
+		int icc = 0;
+
+		for (int i = 0;i < CHILD_COUNT;i++)
+		{
+			index = ci.index[i];
+			if (index > 0) {
+
+				cb = r.leaf[index];
+				if (intersectTest(sb, cb))
+				{
+					flag |= 1 << i;
+					icc++;
+				}
+			}
+		}
+
+		intersectChildCount[tid] = icc;
+		inFlag[tid] = flag;
+	}
+}
+
+__global__ void LastBuildChildList(int *perfixSum, INTERSECT_FLAG *inFlag, int *nodeList, int *childList, int * oldBoxId, int * boxId, rtree r, int length)
+{
+	int tid = blockIdx.x *blockDim.x + threadIdx.x;
+
+	if (tid < length)
+	{
+		int offset = 0;
+		if (tid > 0)offset = perfixSum[tid - 1];
+		INTERSECT_FLAG flag = inFlag[tid];
+		int counter = 0;
+		int obi = oldBoxId[tid];
+		childIndex ci = r.n.child[nodeList[tid]];
+
+		//load child node
+		for (int i = 0;i < CHILD_COUNT;i++)
+		{
+			if (((flag >> i) & 1) == 1)
+			{
+				childList[offset + counter] = ci.index[i];
+				boxId[offset + counter] = obi;
+				counter++;
+			}
+		}
+	}
+}
+
 void debugInt(int *a, int len)
 {
 	int *b = (int*)malloc(len * sizeof(int));
@@ -176,9 +235,44 @@ void iccDebug(int *intersectChildCount, int length)
 	free(bhost);
 }
 
-void searchLeafLayer(int nodeLength, int * &nodeList, box *searchBox, int * &boxId, node n)
+int searchLeafLayer(int nodeLength, int * &nodeList, box *searchBox, int * &boxId, rtree r)
 {
+	INTERSECT_FLAG * inFlag;
+	int *intersectChildCount;
 
+	//std::cout << nodeLength << "\n";
+
+	cudaMalloc((void**)&inFlag, nodeLength * sizeof(INTERSECT_FLAG));
+	cudaMalloc((void**)&intersectChildCount, nodeLength * sizeof(int));
+	LastSearchRtreeKernel << <GetBlockCount(nodeLength), THREAD_PER_BLOCK >> >(searchBox, boxId, r, nodeList, inFlag, intersectChildCount, nodeLength);
+	//boxidDebug(nodeList, nodeLength);
+	//iccDebug(intersectChildCount, nodeLength);
+
+	thrust::device_ptr<int> sum_ptr(intersectChildCount);
+	thrust::inclusive_scan(sum_ptr, sum_ptr + nodeLength, sum_ptr);
+
+
+	int childLength = getChildLength(intersectChildCount, nodeLength);
+	std::cout << childLength << "\n";
+
+	int *childList, *newBoxId;
+	cudaMalloc((void**)&childList, childLength * sizeof(int));
+	cudaMalloc((void**)&newBoxId, childLength * sizeof(int));
+
+	LastBuildChildList << <GetBlockCount(nodeLength), THREAD_PER_BLOCK >> >(intersectChildCount, inFlag, nodeList, childList, boxId, newBoxId, r, nodeLength);
+
+	//boxidDebug(childList, childLength);
+	//free memery
+	cudaFree(intersectChildCount);
+	cudaFree(inFlag);
+
+	cudaFree(nodeList);
+	cudaFree(boxId);
+
+	boxId = newBoxId;
+	nodeList = childList;
+
+	return childLength;
 }
 
 int searchLayer(int nodeLength,int * &nodeList,box *searchBox,int * &boxId,node n)
@@ -219,8 +313,10 @@ int searchLayer(int nodeLength,int * &nodeList,box *searchBox,int * &boxId,node 
 	return childLength;
 }
 
-void searchRtree(box *searchBox,int boxCount,rtree r)
+searchResult searchRtree(box *searchBox,int boxCount,rtree r)
 {
+	int intersectTimes = 0;
+
 	INTERSECT_FLAG * inFlag;
 	int *intersectChildCount;
 	cudaMalloc((void**)&inFlag, boxCount * sizeof(INTERSECT_FLAG));
@@ -247,11 +343,23 @@ void searchRtree(box *searchBox,int boxCount,rtree r)
 	cudaFree(inFlag);
 
 	std::cout << childLength << "\n";
-
+	intersectTimes += childLength;
 	//
-	for (int i = 1;i < r.layer;i++)
+	for (int i = 1;i < r.layer-1;i++)
 	{
 		if (childLength < 1)break;
 		childLength = searchLayer(childLength, childList, dev_searchBox, boxId, r.n);
+		intersectTimes += childLength;
 	}
+
+	childLength = searchLeafLayer(childLength, childList, dev_searchBox, boxId, r);
+	intersectTimes += childLength;
+	std::cout << "intersectTimes is " << intersectTimes << "\n";
+
+	searchResult sr;
+	sr.boxId = boxId;
+	sr.length = childLength;
+	sr.leafList = childList;
+
+	return sr;
 }

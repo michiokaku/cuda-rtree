@@ -2,4 +2,4 @@
 
 #include "dataStruct.h"
 
-void searchRtree(box *searchBox, int boxCount, rtree r);
+searchResult searchRtree(box *searchBox, int boxCount, rtree r);

@@ -93,6 +93,9 @@
     <ClCompile Include="dataStruct.cpp" />
     <ClCompile Include="readObj.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="运行统计.txt" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 9.2.targets" />

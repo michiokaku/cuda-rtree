@@ -2,6 +2,7 @@
 
 #define CHILD_COUNT 8
 #define INTERSECT_FLAG unsigned char  //do not set CHILD_COUNT biger then the bit of the INTERSECT_FLAG
+#define getChild(id,childNumber,length) (id + (childNumber*length))
 
 #include<iostream>
 #include "cuda_runtime.h"
@@ -53,7 +54,7 @@ struct childIndex
 struct node
 {
 	box *b;
-	childIndex *child;
+	int *childIndex;
 };
 
 struct rtree

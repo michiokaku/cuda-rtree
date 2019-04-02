@@ -188,16 +188,17 @@ __device__ box BigerBox(box a, box b)
 	return a;
 }
 
-__global__ void FirstMergeBoxKernel(node n ,box *b,int offset,int parentLength,int length)
+__global__ void FirstMergeBoxKernel(rtree r,int offset,int parentLength,int length)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
 
 	if (tid < parentLength)
 	{
+		offset += tid;
+
 		int cIndex = tid * CHILD_COUNT;
-		box rb = b[cIndex];//the box of node
-		childIndex rci;
-		rci.index[0] = cIndex;
+		box rb = r.leaf[cIndex];//the box of node
+		r.n.childIndex[getChild(offset,0,r.nodeCount)] = cIndex;
 
 		//count the number of children
 		int childNum = CHILD_COUNT;
@@ -211,14 +212,13 @@ __global__ void FirstMergeBoxKernel(node n ,box *b,int offset,int parentLength,i
 		box cb;
 		for (int i = 1;i < childNum;i++)
 		{
-			rci.index[i] = cIndex + i;
-			cb = b[cIndex + i];
+			r.n.childIndex[getChild(offset, i, r.nodeCount)] = cIndex + i;
+			cb = r.leaf[cIndex + i];
 			rb = BigerBox(rb, cb);
 		}
 
 		//return node
-		n.b[offset + tid] = rb;
-		n.child[offset + tid] = rci;
+		r.n.b[offset] = rb;
 	}
 }
 
@@ -234,16 +234,17 @@ __device__ childIndex initChildIndex()
 	return ci;
 }
 
-__global__ void MergeBoxKernel(node n, int parentOffset,int childOffset ,int parentLength, int length)
+__global__ void MergeBoxKernel(rtree r, int parentOffset,int childOffset ,int parentLength, int length)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
 
 	if (tid < parentLength)
 	{
+		parentOffset += tid;
+
 		int cIndex = tid * CHILD_COUNT + childOffset;
-		box rb = n.b[cIndex];//the box of node
-		childIndex rci = initChildIndex();
-		rci.index[0] = cIndex;
+		box rb = r.n.b[cIndex];//the box of node
+		r.n.childIndex[getChild(parentOffset,0,r.nodeCount)] = cIndex;
 
 		//count the number of children
 		int childNum = CHILD_COUNT;
@@ -256,21 +257,20 @@ __global__ void MergeBoxKernel(node n, int parentOffset,int childOffset ,int par
 		box cb;
 		for (int i = 1;i < childNum;i++)
 		{
-			rci.index[i] = cIndex + i;
-			cb = n.b[cIndex+i];
+			r.n.childIndex[getChild(parentOffset, i, r.nodeCount)] = cIndex + i;
+			cb = r.n.b[cIndex+i];
 			rb = BigerBox(rb, cb);
 		}
 
-		n.b[parentOffset + tid] = rb;
-		n.child[parentOffset + tid] = rci;
+		r.n.b[parentOffset + tid] = rb;
 	}
 }
 
-__global__ void initNode(node n,int length)
+__global__ void initNode(rtree r)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
 
-	if (tid < length)
+	if (tid < r.nodeCount)
 	{
 		box rb;
 		rb.xMax = 0.0;
@@ -280,14 +280,12 @@ __global__ void initNode(node n,int length)
 		rb.zMax = 0.0;
 		rb.zMin = 0.0;
 
-		childIndex ci;
 		for (int i = 0;i < CHILD_COUNT;i++)
 		{
-			ci.index[i] = -1;
+			r.n.childIndex[getChild(tid, i, r.nodeCount)];
 		}
 
-		n.b[tid] = rb;
-		n.child[tid] = ci;
+		r.n.b[tid] = rb;
 	}
 }
 
@@ -310,13 +308,13 @@ rtree mergeBox(box *b,int length)
 	while (len > 1);
 
 	cudaMalloc((void**)&r.n.b, r.nodeCount * sizeof(box));
-	cudaMalloc((void**)&r.n.child, r.nodeCount * sizeof(childIndex));
-	initNode << <GetBlockCount(r.nodeCount), THREAD_PER_BLOCK >> > (r.n, r.nodeCount);
+	cudaMalloc((void**)&r.n.childIndex, r.nodeCount * CHILD_COUNT * sizeof(int));
+	initNode << <GetBlockCount(r.nodeCount), THREAD_PER_BLOCK >> > (r);
 
 	len = length;
 	len = (len + CHILD_COUNT - 1) / CHILD_COUNT;
 	int offset = r.nodeCount - len;
-	FirstMergeBoxKernel << <GetBlockCount(len), THREAD_PER_BLOCK >> > (r.n, b, offset, len,length);
+	FirstMergeBoxKernel << <GetBlockCount(len), THREAD_PER_BLOCK >> > (r, offset, len,length);
 
 	int oldLen;
 	for (int i = 1;i < r.layer;i++)
@@ -324,7 +322,7 @@ rtree mergeBox(box *b,int length)
 		oldLen = len;
 		len = (len + CHILD_COUNT - 1) / CHILD_COUNT;
 		offset = offset - len;
-		MergeBoxKernel << <GetBlockCount(len), THREAD_PER_BLOCK >> > (r.n,offset, offset+len, len, oldLen);
+		MergeBoxKernel << <GetBlockCount(len), THREAD_PER_BLOCK >> > (r,offset, offset+len, len, oldLen);
 	}
 
 	return r;

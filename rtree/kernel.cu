@@ -70,7 +70,7 @@ box* genBox(int length)
 
 int main()
 {
-	int length = 1000;
+	int length = 200000;
 	box * b = genBox(length);
 
 	cudaFree(0);
@@ -81,7 +81,7 @@ int main()
 	searchRtree(b, length, r);
 	spendTime();
 
-	system("pause");
+	//system("pause");
 
 	//cudaDeviceReset();
 	return 0;

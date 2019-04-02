@@ -14,14 +14,13 @@ __device__ void pBox(box b)
 	printf("xMax:%f ; xMin:%f ; yMax:%f ; yMin:%f ; zMax:%f ; zMin:%f ;\n", b.xMax, b.xMin, b.yMax, b.yMin, b.zMax, b.zMin);
 }
 
-__global__ void FirstSearchRtreeKernel(box *searchBox, node n,INTERSECT_FLAG *inFlag,int *intersectChildCount,int length)
+__global__ void FirstSearchRtreeKernel(box *searchBox, rtree r,INTERSECT_FLAG *inFlag,int *intersectChildCount,int length)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
 
 	if (tid < length)
 	{
 		box sb = searchBox[tid];
-		childIndex ci = n.child[0];
 		box cb;
 		int index;
 
@@ -30,10 +29,10 @@ __global__ void FirstSearchRtreeKernel(box *searchBox, node n,INTERSECT_FLAG *in
 
 		for (int i = 0;i < CHILD_COUNT;i++)
 		{
-			index = ci.index[i];
+			index = r.n.childIndex[getChild(0,i,r.nodeCount)];
 			if (index > 0) {
 				
-				cb = n.b[index];
+				cb = r.n.b[index];
 				if(intersectTest(sb, cb))
 				{
 					flag |= 1 << i;
@@ -47,7 +46,7 @@ __global__ void FirstSearchRtreeKernel(box *searchBox, node n,INTERSECT_FLAG *in
 	}
 }
 
-__global__ void FirstBuildChildList(int *perfixSum, INTERSECT_FLAG *inFlag,int *childList,int * boxId,node n,int length)
+__global__ void FirstBuildChildList(int *perfixSum, INTERSECT_FLAG *inFlag,int *childList,int * boxId,rtree r,int length)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
 
@@ -57,14 +56,13 @@ __global__ void FirstBuildChildList(int *perfixSum, INTERSECT_FLAG *inFlag,int *
 		if (tid > 0)offset = perfixSum[tid - 1];
 		INTERSECT_FLAG flag = inFlag[tid];
 		int counter = 0;
-		childIndex ci = n.child[0];
 
 		//load child node
 		for (int i = 0;i < CHILD_COUNT;i++)
 		{
 			if (((flag >> i) & 1) == 1)
 			{
-				childList[offset + counter] = ci.index[i];
+				childList[offset + counter] = r.n.childIndex[getChild(0, i, r.nodeCount)];
 				boxId[offset + counter] = tid;
 				counter++;
 			}
@@ -72,14 +70,13 @@ __global__ void FirstBuildChildList(int *perfixSum, INTERSECT_FLAG *inFlag,int *
 	}
 }
 
-__global__ void SearchRtreeKernel(box *searchBox, int *boxId, node n, int *nodeList, INTERSECT_FLAG *inFlag, int *intersectChildCount, int length)
+__global__ void SearchRtreeKernel(box *searchBox, int *boxId, rtree r, int *nodeList, INTERSECT_FLAG *inFlag, int *intersectChildCount, int length)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
 
 	if (tid < length)
 	{
 		box sb = searchBox[boxId[tid]];
-		childIndex ci = n.child[nodeList[tid]];
 		box cb;
 		int index;
 
@@ -88,10 +85,10 @@ __global__ void SearchRtreeKernel(box *searchBox, int *boxId, node n, int *nodeL
 
 		for (int i = 0;i < CHILD_COUNT;i++)
 		{
-			index = ci.index[i];
+			index = r.n.childIndex[getChild(nodeList[tid], i, r.nodeCount)];
 			if (index > 0) {
 
-				cb = n.b[index];
+				cb = r.n.b[index];
 				if (intersectTest(sb, cb))
 				{
 					flag |= 1 << i;
@@ -105,7 +102,7 @@ __global__ void SearchRtreeKernel(box *searchBox, int *boxId, node n, int *nodeL
 	}
 }
 
-__global__ void BuildChildList(int *perfixSum, INTERSECT_FLAG *inFlag,int *nodeList ,int *childList,int * oldBoxId, int * boxId, node n, int length)
+__global__ void BuildChildList(int *perfixSum, INTERSECT_FLAG *inFlag,int *nodeList ,int *childList,int * oldBoxId, int * boxId, rtree r, int length)
 {
 	int tid = blockIdx.x *blockDim.x + threadIdx.x;
 
@@ -116,14 +113,13 @@ __global__ void BuildChildList(int *perfixSum, INTERSECT_FLAG *inFlag,int *nodeL
 		INTERSECT_FLAG flag = inFlag[tid];
 		int counter = 0;
 		int obi = oldBoxId[tid];
-		childIndex ci = n.child[nodeList[tid]];
 
 		//load child node
 		for (int i = 0;i < CHILD_COUNT;i++)
 		{
 			if (((flag >> i) & 1) == 1)
 			{
-				childList[offset + counter] = ci.index[i];
+				childList[offset + counter] = r.n.childIndex[getChild(nodeList[tid], i, r.nodeCount)];
 				boxId[offset + counter] = obi;
 				counter++;
 			}
@@ -138,7 +134,6 @@ __global__ void LastSearchRtreeKernel(box *searchBox, int *boxId, rtree r, int *
 	if (tid < length)
 	{
 		box sb = searchBox[boxId[tid]];
-		childIndex ci = r.n.child[nodeList[tid]];
 		box cb;
 		int index;
 
@@ -147,7 +142,7 @@ __global__ void LastSearchRtreeKernel(box *searchBox, int *boxId, rtree r, int *
 
 		for (int i = 0;i < CHILD_COUNT;i++)
 		{
-			index = ci.index[i];
+			index = r.n.childIndex[getChild(nodeList[tid], i, r.nodeCount)];
 			if (index > 0) {
 
 				cb = r.leaf[index];
@@ -175,14 +170,13 @@ __global__ void LastBuildChildList(int *perfixSum, INTERSECT_FLAG *inFlag, int *
 		INTERSECT_FLAG flag = inFlag[tid];
 		int counter = 0;
 		int obi = oldBoxId[tid];
-		childIndex ci = r.n.child[nodeList[tid]];
 
 		//load child node
 		for (int i = 0;i < CHILD_COUNT;i++)
 		{
 			if (((flag >> i) & 1) == 1)
 			{
-				childList[offset + counter] = ci.index[i];
+				childList[offset + counter] = r.n.childIndex[getChild(nodeList[tid], i, r.nodeCount)];
 				boxId[offset + counter] = obi;
 				counter++;
 			}
@@ -275,7 +269,7 @@ int searchLeafLayer(int nodeLength, int * &nodeList, box *searchBox, int * &boxI
 	return childLength;
 }
 
-int searchLayer(int nodeLength,int * &nodeList,box *searchBox,int * &boxId,node n)
+int searchLayer(int nodeLength,int * &nodeList,box *searchBox,int * &boxId,rtree r)
 {
 	INTERSECT_FLAG * inFlag;
 	int *intersectChildCount;
@@ -284,7 +278,7 @@ int searchLayer(int nodeLength,int * &nodeList,box *searchBox,int * &boxId,node 
 
 	cudaMalloc((void**)&inFlag, nodeLength * sizeof(INTERSECT_FLAG));
 	cudaMalloc((void**)&intersectChildCount, nodeLength * sizeof(int));
-	SearchRtreeKernel << <GetBlockCount(nodeLength), THREAD_PER_BLOCK >> >(searchBox, boxId, n, nodeList, inFlag, intersectChildCount, nodeLength);
+	SearchRtreeKernel << <GetBlockCount(nodeLength), THREAD_PER_BLOCK >> >(searchBox, boxId, r, nodeList, inFlag, intersectChildCount, nodeLength);
 	//boxidDebug(nodeList, nodeLength);
 	//iccDebug(intersectChildCount, nodeLength);
 
@@ -297,7 +291,7 @@ int searchLayer(int nodeLength,int * &nodeList,box *searchBox,int * &boxId,node 
 	cudaMalloc((void**)&childList, childLength * sizeof(int));
 	cudaMalloc((void**)&newBoxId, childLength * sizeof(int));
 
-	BuildChildList << <GetBlockCount(nodeLength), THREAD_PER_BLOCK >> >(intersectChildCount, inFlag, nodeList, childList, boxId, newBoxId, n, nodeLength);
+	BuildChildList << <GetBlockCount(nodeLength), THREAD_PER_BLOCK >> >(intersectChildCount, inFlag, nodeList, childList, boxId, newBoxId, r, nodeLength);
 
 	//boxidDebug(childList, childLength);
 	//free memery
@@ -327,7 +321,7 @@ searchResult searchRtree(box *searchBox,int boxCount,rtree r)
 	cudaMemcpy(dev_searchBox, searchBox, boxCount * sizeof(box), cudaMemcpyHostToDevice);
 	
 	//firts search is diferent for others
-	FirstSearchRtreeKernel << <GetBlockCount(boxCount), THREAD_PER_BLOCK >> > (dev_searchBox, r.n, inFlag, intersectChildCount, boxCount);
+	FirstSearchRtreeKernel << <GetBlockCount(boxCount), THREAD_PER_BLOCK >> > (dev_searchBox, r, inFlag, intersectChildCount, boxCount);
 
 	//iccDebug(intersectChildCount, boxCount);
 
@@ -337,7 +331,7 @@ searchResult searchRtree(box *searchBox,int boxCount,rtree r)
 	int *childList,*boxId;
 	cudaMalloc((void**)&childList, childLength * sizeof(int));
 	cudaMalloc((void**)&boxId, childLength * sizeof(int));
-	FirstBuildChildList << <GetBlockCount(boxCount), THREAD_PER_BLOCK >> >(intersectChildCount, inFlag, childList, boxId, r.n, boxCount);
+	FirstBuildChildList << <GetBlockCount(boxCount), THREAD_PER_BLOCK >> >(intersectChildCount, inFlag, childList, boxId, r, boxCount);
 	//free memery
 	cudaFree(intersectChildCount);
 	cudaFree(inFlag);
@@ -348,7 +342,7 @@ searchResult searchRtree(box *searchBox,int boxCount,rtree r)
 	for (int i = 1;i < r.layer-1;i++)
 	{
 		if (childLength < 1)break;
-		childLength = searchLayer(childLength, childList, dev_searchBox, boxId, r.n);
+		childLength = searchLayer(childLength, childList, dev_searchBox, boxId, r);
 		intersectTimes += childLength;
 	}
 

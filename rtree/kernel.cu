@@ -70,7 +70,7 @@ box* genBox(int length)
 
 int main()
 {
-	int length = 200000;
+	int length = 10000;
 	box * b = genBox(length);
 
 	cudaFree(0);

@@ -1,6 +1,6 @@
 #pragma once
 
-#define CHILD_COUNT 8
+#define CHILD_COUNT 4
 #define INTERSECT_FLAG unsigned char  //do not set CHILD_COUNT biger then the bit of the INTERSECT_FLAG
 #define getChild(id,childNumber,length) (id + (childNumber*length))
 

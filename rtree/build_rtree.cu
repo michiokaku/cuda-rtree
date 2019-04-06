@@ -198,7 +198,7 @@ __global__ void FirstMergeBoxKernel(rtree r,int offset,int parentLength,int leng
 
 		int cIndex = tid * CHILD_COUNT;
 		box rb = r.leaf[cIndex];//the box of node
-		r.n.childIndex[getChild(offset,0,r.nodeCount)] = cIndex;
+		r.n.childIndex[getChild(offset,0,r.nodeCount)] = offset;
 
 		//count the number of children
 		int childNum = CHILD_COUNT;
@@ -212,8 +212,8 @@ __global__ void FirstMergeBoxKernel(rtree r,int offset,int parentLength,int leng
 		box cb;
 		for (int i = 1;i < childNum;i++)
 		{
-			r.n.childIndex[getChild(offset, i, r.nodeCount)] = cIndex + i;
-			cb = r.leaf[cIndex + i];
+			r.n.childIndex[getChild(offset, i, r.nodeCount)] = offset + i;
+			cb = r.leaf[offset + i];
 			rb = BigerBox(rb, cb);
 		}
 
@@ -242,9 +242,9 @@ __global__ void MergeBoxKernel(rtree r, int parentOffset,int childOffset ,int pa
 	{
 		parentOffset += tid;
 
-		int cIndex = tid * CHILD_COUNT + childOffset;
-		box rb = r.n.b[cIndex];//the box of node
-		r.n.childIndex[getChild(parentOffset,0,r.nodeCount)] = cIndex;
+		int childBoxIndex = (tid * CHILD_COUNT) + childOffset;
+		box rb = r.n.b[childBoxIndex];//the box of node
+		r.n.childIndex[getChild(parentOffset,0,r.nodeCount)] = childOffset;
 
 		//count the number of children
 		int childNum = CHILD_COUNT;
@@ -257,12 +257,12 @@ __global__ void MergeBoxKernel(rtree r, int parentOffset,int childOffset ,int pa
 		box cb;
 		for (int i = 1;i < childNum;i++)
 		{
-			r.n.childIndex[getChild(parentOffset, i, r.nodeCount)] = cIndex + i;
-			cb = r.n.b[cIndex+i];
+			r.n.childIndex[getChild(parentOffset, i, r.nodeCount)] = childOffset + i;
+			cb = r.n.b[childBoxIndex+i];
 			rb = BigerBox(rb, cb);
 		}
 
-		r.n.b[parentOffset + tid] = rb;
+		r.n.b[parentOffset] = rb;
 	}
 }
 
@@ -302,6 +302,7 @@ rtree mergeBox(box *b,int length)
 	do
 	{
 		len = (len + CHILD_COUNT - 1) / CHILD_COUNT;
+		std::cout << len << "\n";
 		r.nodeCount += len;
 		r.layer++;
 	} 

@@ -184,6 +184,33 @@ __global__ void LastBuildChildList(int *perfixSum, INTERSECT_FLAG *inFlag, int *
 	}
 }
 
+__global__ void LastBuildChildListNode(int *perfixSum, INTERSECT_FLAG *inFlag, int *nodeList, int *childList, int * oldBoxId, int * boxId, rtree r, int length)
+{
+	int tid = blockIdx.x *blockDim.x + threadIdx.x;
+
+	if (tid < length)
+	{
+		int parentId = tid / CHILD_COUNT;
+
+		int offset = 0;
+		if (tid > 0)offset = perfixSum[tid - 1];
+		INTERSECT_FLAG flag = inFlag[tid];
+		int counter = 0;
+		int obi = oldBoxId[tid];
+
+		//load child node
+		for (int i = 0;i < CHILD_COUNT;i++)
+		{
+			if (((flag >> i) & 1) == 1)
+			{
+				childList[offset + counter] = r.n.childIndex[getChild(nodeList[tid], i, r.nodeCount)];
+				boxId[offset + counter] = obi;
+				counter++;
+			}
+		}
+	}
+}
+
 void debugInt(int *a, int len)
 {
 	int *b = (int*)malloc(len * sizeof(int));
